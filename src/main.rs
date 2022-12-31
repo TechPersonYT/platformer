@@ -78,12 +78,12 @@ impl<T: SimulatedVisible> Visible for T {
             if let Some(image) = self.get_image() {
                 canvas.draw_textured_mesh(self.get_mesh(), image, DrawParam::new().dest(Point2{
                     x: self.get_position().x + position.x,
-                    y: window_height - self.get_position().y + position.y}))
+                    y: window_height - self.get_position().y + position.y}).rotation(-self.get_rotation() + rotation))
             }
             else {
                 canvas.draw(&self.get_mesh(), DrawParam::new().dest(Point2{
                     x: self.get_position().x + position.x,
-                    y: window_height - self.get_position().y + position.y}))
+                    y: window_height - self.get_position().y + position.y}).rotation(-self.get_rotation() + rotation))
             }
     }
 }
@@ -310,10 +310,10 @@ struct MainState {
 
 impl MainState {
     fn new(mut simulation: Simulation, gfx: &GraphicsContext) -> GameResult<MainState> {
-        let player = Player::new(&mut simulation, gfx, vector![0.0, 1000.0])?;
+        let player = Player::new(&mut simulation, gfx, vector![200.0, 1000.0])?;
 
         let ground = Platform::from_body_and_collider(&mut simulation, gfx,
-            RigidBodyBuilder::new(RigidBodyType::Fixed).build(),
+            RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_translations().build(),
             ColliderBuilder::cuboid(500.0, 5.0).build(),
         Color::WHITE)?;
 
@@ -329,6 +329,7 @@ impl MainState {
 impl event::EventHandler<ggez::GameError> for MainState {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
         self.player.update(&mut self.simulation);
+        self.ground.update(&mut self.simulation);
         self.simulation.update();
         self.camera.update(ctx);
         Ok(())
