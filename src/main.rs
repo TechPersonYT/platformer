@@ -306,7 +306,7 @@ struct MainState {
 
 impl MainState {
     fn new(mut simulation: Simulation, gfx: &GraphicsContext) -> GameResult<MainState> {
-        let player = Player::new(&mut simulation, gfx, vector![0.0, 0.0])?;
+        let player = Player::new(&mut simulation, gfx, vector![0.0, 15.0])?;
 
         let ground = Platform::from_body_and_collider(&mut simulation, gfx,
             RigidBodyBuilder::new(RigidBodyType::Fixed).build(),
