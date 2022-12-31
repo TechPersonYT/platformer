@@ -98,7 +98,7 @@ struct Player {
 
 impl Player {
     fn new(simulation: &mut Simulation, gfx: &GraphicsContext, translation: Vector<Real>) -> GameResult<Self> {
-        let rigid_body = RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_rotations().translation(translation);
+        let rigid_body = RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_rotations().translation(translation).can_sleep(false);
         let rigid_body_handle = simulation.rigid_body_set.insert(rigid_body);
 
         let collider = ColliderBuilder::cuboid(20.0, 30.0).build();
