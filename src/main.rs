@@ -287,7 +287,7 @@ impl Simulation {
     fn new() -> Self {
         let mut rigid_body_set = RigidBodySet::new();
         let mut collider_set = ColliderSet::new();
-        let gravity = vector![0.0, -9.81];
+        let gravity = vector![0.0, -75.0];
         let integration_parameters = IntegrationParameters::default();
         let mut physics_pipeline = PhysicsPipeline::new();
         let mut island_manager = IslandManager::new();
