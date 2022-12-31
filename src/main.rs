@@ -118,6 +118,30 @@ impl Player {
             rotation: 0.0,
         })
     }
+
+    fn movement_update(&mut self, simulation: &mut Simulation, ctx: &Context) {
+        const MOVEMENT_SPEED: f32 = 500.0;
+
+        let mut velocity = simulation.rigid_body_set[*self.get_rigid_body_handle()].linvel().clone();
+
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Up) {
+
+        }
+
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Down) {
+            
+        }
+
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Left) {
+            velocity.x -= MOVEMENT_SPEED;
+        }
+
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Right) {
+            self.position.x += MOVEMENT_SPEED;
+        }
+
+        simulation.rigid_body_set[*self.get_rigid_body_handle()].set_linvel(velocity, true);
+    }
 }
 
 impl Simulated for Player {
