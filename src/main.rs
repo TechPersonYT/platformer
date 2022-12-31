@@ -1,3 +1,4 @@
+use ggez::winit::event::VirtualKeyCode;
 use ggez::{event, mint};
 use ggez::graphics::{self, Color, DrawParam, Canvas, Drawable, Rect, GraphicsContext, Mesh, Transform, Image};
 use ggez::mint::Point2;
@@ -18,6 +19,26 @@ impl Camera {
     fn render(&self, canvas: &mut Canvas, gfx: &GraphicsContext, visibles: Vec<&dyn Visible>) {
         for visible in visibles {
             visible.draw(canvas, gfx, &Point2{x: self.position.x, y: self.position.y}, self.rotation);
+        }
+    }
+
+    fn update(&mut self, ctx: &Context) {
+        const MOVEMENT_SPEED: f32 = 5.0;
+
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::W) {
+            self.position.y += MOVEMENT_SPEED
+        }
+
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::S) {
+            self.position.y -= MOVEMENT_SPEED
+        }
+
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::A) {
+            self.position.x += MOVEMENT_SPEED
+        }
+
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::D) {
+            self.position.x -= MOVEMENT_SPEED
         }
     }
 }
@@ -303,9 +324,10 @@ impl MainState {
 }
 
 impl event::EventHandler<ggez::GameError> for MainState {
-    fn update(&mut self, _ctx: &mut Context) -> GameResult {
+    fn update(&mut self, ctx: &mut Context) -> GameResult {
         self.player.update(&mut self.simulation);
         self.simulation.update();
+        self.camera.update(ctx);
         Ok(())
     }
 
