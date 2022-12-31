@@ -29,19 +29,19 @@ impl Camera {
     fn update(&mut self, ctx: &Context) {
         const MOVEMENT_SPEED: f32 = 5.0;
 
-        if ctx.keyboard.is_key_pressed(VirtualKeyCode::W) {
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Up) {
             self.position.y += MOVEMENT_SPEED
         }
 
-        if ctx.keyboard.is_key_pressed(VirtualKeyCode::S) {
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Down) {
             self.position.y -= MOVEMENT_SPEED
         }
 
-        if ctx.keyboard.is_key_pressed(VirtualKeyCode::A) {
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Left) {
             self.position.x += MOVEMENT_SPEED
         }
 
-        if ctx.keyboard.is_key_pressed(VirtualKeyCode::D) {
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Right) {
             self.position.x -= MOVEMENT_SPEED
         }
     }
