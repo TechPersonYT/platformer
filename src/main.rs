@@ -309,8 +309,7 @@ impl MainState {
         let player = Player::new(&mut simulation, gfx, vector![0.0, 0.0])?;
 
         let ground = Platform::from_body_and_collider(&mut simulation, gfx,
-            RigidBodyBuilder::new(RigidBodyType::Dynamic)
-            .enabled_translations(false, false).build(),
+            RigidBodyBuilder::new(RigidBodyType::Fixed).build(),
             ColliderBuilder::cuboid(500.0, 5.0).build(),
         Color::WHITE)?;
 
