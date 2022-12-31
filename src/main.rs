@@ -98,17 +98,31 @@ struct Player {
 
 impl Player {
     fn new(simulation: &mut Simulation, gfx: &GraphicsContext, translation: Vector<Real>) -> GameResult<Self> {
-        let rigid_body = RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_rotations().translation(translation).can_sleep(false);
+        let rigid_body = RigidBodyBuilder::new(RigidBodyType::Dynamic)
+            .lock_rotations()
+            .translation(translation)
+            .can_sleep(false);
         let rigid_body_handle = simulation.rigid_body_set.insert(rigid_body);
 
         let collider = ColliderBuilder::cuboid(20.0, 30.0).build();
-        let collider_handle = simulation.collider_set.insert_with_parent(collider.clone(), rigid_body_handle, &mut simulation.rigid_body_set);
+        let collider_handle = simulation.collider_set.insert_with_parent(
+            collider.clone(),
+            rigid_body_handle,
+            &mut simulation.rigid_body_set);
 
-        let half_extents = collider.shape().as_cuboid().unwrap().half_extents;
+        let half_extents = collider
+            .shape()
+            .as_cuboid()   
+            .unwrap()
+            .half_extents;
         let top_left = collider.translation() - half_extents;
         let extents = half_extents * 2.0;
 
-        let mesh = Mesh::new_rectangle(gfx, graphics::DrawMode::fill(), graphics::Rect::new(top_left.x, top_left.y, extents.x, extents.y), Color::GREEN)?;
+        let mesh = Mesh::new_rectangle(
+            gfx,
+            graphics::DrawMode::fill(),
+            graphics::Rect::new(top_left.x, top_left.y, extents.x, extents.y),
+            Color::GREEN)?;
 
         Ok(Player{
             rigid_body_handle,
@@ -195,15 +209,22 @@ impl Platform {
         let rotation = rigid_body.rotation().angle();
 
         let rigid_body_handle = simulation.rigid_body_set.insert(rigid_body);
-        let collider_handle = simulation.collider_set.insert_with_parent(collider.clone(), rigid_body_handle, &mut simulation.rigid_body_set);
+        let collider_handle = simulation.collider_set.insert_with_parent(
+            collider.clone(),
+            rigid_body_handle,
+            &mut simulation.rigid_body_set);
 
         let mesh = match collider.shape().shape_type() {
             ShapeType::Ball => todo!(),
             ShapeType::Cuboid => {
-                let half_extents = collider.shape().as_cuboid().unwrap().half_extents;
+                let half_extents = collider
+                    .shape()
+                    .as_cuboid()
+                    .unwrap()
+                .half_extents;
                 let top_left = collider.translation() - half_extents;
                 let extents = half_extents * 2.0;
-        
+
                 Mesh::new_rectangle(gfx, graphics::DrawMode::fill(), graphics::Rect::new(top_left.x, top_left.y, extents.x, extents.y), color)?
             },
             ShapeType::Capsule => todo!(),
