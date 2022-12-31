@@ -17,10 +17,12 @@ struct Camera {
 
 impl Camera {
     fn render(&self, canvas: &mut Canvas, gfx: &GraphicsContext, visibles: Vec<&dyn Visible>) {
+        let width = gfx.drawable_size().0;
         let height = gfx.drawable_size().1;
+        let position = vector![self.position.x + width / 2.0, self.position.y + height / 2.0];
 
         for visible in visibles {
-            visible.draw(canvas, gfx, &Point2{x: self.position.x, y: self.position.y}, self.rotation, height);
+            visible.draw(canvas, gfx, &Point2{x: position.x, y: position.y}, self.rotation, height);
         }
     }
 
