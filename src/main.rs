@@ -124,35 +124,46 @@ impl Jump {
 
     fn velocity(&mut self, ctx: &Context) -> f32 {
         if let Some(start) = self.start {
-            const FULL_UPWARD_TIME: usize = 30;
-            const APEX_TIME: usize = 50;
-            const APEX_RELEASE_TIME: usize = 55;
-            const TERMINAL_VELOCITY_TIME: usize = 100;
+            const TOTAL_TIME: f32 = 200.0;
 
-            const EARLY_TIMESKIP: usize = 10;
+            // Normalized times
+            const FULL_UPWARD_PERCENT: f32 = 0.3;
+            const APEX_PERCENT: f32 = 0.5;
+            const APEX_RELEASE_PERCENT: f32 = 0.51;
+            const TERMINAL_VELOCITY_PERCENT: f32 = 1.0;
+
+            const EARLY_TIMESKIP_PERCENT: f32 = 0.15;
+
+            // Real times
+            const FULL_UPWARD_TIME: f32 = FULL_UPWARD_PERCENT * TOTAL_TIME;
+            const APEX_TIME: f32 = APEX_PERCENT * TOTAL_TIME;
+            const APEX_RELEASE_TIME: f32 = APEX_RELEASE_PERCENT * TOTAL_TIME;
+            const TERMINAL_VELOCITY_TIME: f32 = TERMINAL_VELOCITY_PERCENT * TOTAL_TIME;
+
+            const EARLY_TIMESKIP: f32 = EARLY_TIMESKIP_PERCENT * TOTAL_TIME;
 
             const INITIAL_VELOCITY: f32 = 200.0;
 
             let duration = if self.end.is_some() {
                 // Early release: skip a set amount of time
-                ctx.time.ticks() - start + FULL_UPWARD_TIME + EARLY_TIMESKIP
+                ctx.time.ticks() as f32 - (start as f32) + FULL_UPWARD_TIME + EARLY_TIMESKIP
             } else {
-                ctx.time.ticks() - start
-            };
+                ctx.time.ticks() as f32 - (start as f32)
+            } as f32;
 
             if duration < APEX_TIME {
                 if duration < FULL_UPWARD_TIME {
                     INITIAL_VELOCITY
                 }
                 else {
-                    remap::<f32>(duration as f32, FULL_UPWARD_TIME as f32, APEX_TIME as f32, INITIAL_VELOCITY, 0.0)
+                    remap::<f32>(duration, FULL_UPWARD_TIME, APEX_TIME, INITIAL_VELOCITY, 0.0)
                 }
             }
             else if duration < APEX_RELEASE_TIME {
                 0.0
             }
             else if duration < TERMINAL_VELOCITY_TIME {
-                remap::<f32>(duration as f32, APEX_RELEASE_TIME as f32, TERMINAL_VELOCITY_TIME as f32, 0.0, Jump::TERMINAL_VELOCITY)
+                remap::<f32>(duration, APEX_RELEASE_TIME, TERMINAL_VELOCITY_TIME, 0.0, Jump::TERMINAL_VELOCITY)
             }
             else {
                 self.end = Some(ctx.time.ticks());
@@ -452,7 +463,7 @@ impl MainState {
         let player = Player::new(&mut simulation, gfx, vector![200.0, 1000.0])?;
 
         let ground = Platform::from_body_and_collider(&mut simulation, gfx,
-            RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_translations().lock_rotations().build(),
+            RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_translations().build(),
             ColliderBuilder::cuboid(500.0, 5.0).density(10.0).build(),
         Color::WHITE)?;
 
