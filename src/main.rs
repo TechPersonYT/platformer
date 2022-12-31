@@ -99,7 +99,7 @@ impl Player {
         let rigid_body = RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_rotations().translation(translation);
         let rigid_body_handle = simulation.rigid_body_set.insert(rigid_body);
 
-        let collider = ColliderBuilder::cuboid(10.0, 50.0).build();
+        let collider = ColliderBuilder::cuboid(20.0, 30.0).build();
         let collider_handle = simulation.collider_set.insert_with_parent(collider.clone(), rigid_body_handle, &mut simulation.rigid_body_set);
 
         let half_extents = collider.shape().as_cuboid().unwrap().half_extents;
