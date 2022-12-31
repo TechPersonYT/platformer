@@ -103,7 +103,7 @@ impl Player {
         let collider_handle = simulation.collider_set.insert_with_parent(collider.clone(), rigid_body_handle, &mut simulation.rigid_body_set);
 
         let half_extents = collider.shape().as_cuboid().unwrap().half_extents;
-        let top_left = translation - half_extents;
+        let top_left = collider.translation() - half_extents;
         let extents = half_extents * 2.0;
 
         let mesh = Mesh::new_rectangle(gfx, graphics::DrawMode::fill(), graphics::Rect::new(top_left.x, top_left.y, extents.x, extents.y), Color::GREEN)?;
@@ -174,7 +174,7 @@ impl Platform {
             ShapeType::Ball => todo!(),
             ShapeType::Cuboid => {
                 let half_extents = collider.shape().as_cuboid().unwrap().half_extents;
-                let top_left = translation - half_extents;
+                let top_left = collider.translation() - half_extents;
                 let extents = half_extents * 2.0;
         
                 Mesh::new_rectangle(gfx, graphics::DrawMode::fill(), graphics::Rect::new(top_left.x, top_left.y, extents.x, extents.y), color)?
@@ -308,7 +308,7 @@ struct MainState {
 
 impl MainState {
     fn new(mut simulation: Simulation, gfx: &GraphicsContext) -> GameResult<MainState> {
-        let player = Player::new(&mut simulation, gfx, vector![0.0, 15.0])?;
+        let player = Player::new(&mut simulation, gfx, vector![0.0, 1000.0])?;
 
         let ground = Platform::from_body_and_collider(&mut simulation, gfx,
             RigidBodyBuilder::new(RigidBodyType::Fixed).build(),
