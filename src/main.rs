@@ -120,24 +120,25 @@ impl Player {
     }
 
     fn movement_update(&mut self, simulation: &mut Simulation, ctx: &Context) {
-        const MOVEMENT_SPEED: f32 = 500.0;
+        const MOVEMENT_SPEED: f32 = 100.0;
 
         let mut velocity = simulation.rigid_body_set[*self.get_rigid_body_handle()].linvel().clone();
+        velocity.x = 0.0;
 
-        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Up) {
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::W) {
 
         }
 
-        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Down) {
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::S) {
             
         }
 
-        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Left) {
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::A) {
             velocity.x -= MOVEMENT_SPEED;
         }
 
-        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Right) {
-            self.position.x += MOVEMENT_SPEED;
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::D) {
+            velocity.x += MOVEMENT_SPEED;
         }
 
         simulation.rigid_body_set[*self.get_rigid_body_handle()].set_linvel(velocity, true);
@@ -352,9 +353,10 @@ impl MainState {
 
 impl event::EventHandler<ggez::GameError> for MainState {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
+        self.player.movement_update(&mut self.simulation, ctx);
+        self.simulation.update();
         self.player.update(&mut self.simulation);
         self.ground.update(&mut self.simulation);
-        self.simulation.update();
         self.camera.update(ctx);
         Ok(())
     }
