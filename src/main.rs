@@ -178,6 +178,7 @@ struct Player {
     mesh: Mesh,
     position: Point2<f32>,
     rotation: f32,
+    jump: Option<Jump>,
 }
 
 impl Player {
@@ -214,15 +215,16 @@ impl Player {
             mesh,
             position: Point2{x: translation.x, y: translation.y},
             rotation: 0.0,
+            jump: None,
         })
     }
 
     fn movement_update(&mut self, simulation: &mut Simulation, ctx: &Context) {
         const MOVEMENT_FACTOR: f32 = 700.0;
 
-        //let mut velocity = simulation.rigid_body_set[*self.get_rigid_body_handle()].linvel().clone();
-        //velocity.x = 0.0;
-        let mut movement = vector![0.0, 0.0];
+        let mut movement = simulation.rigid_body_set[*self.get_rigid_body_handle()].linvel().clone();
+        movement.x = 0.0;
+        //let mut movement = vector![0.0, 0.0];
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::W) {
 
@@ -242,8 +244,27 @@ impl Player {
             //velocity.x += MOVEMENT_FACTOR;
         }
 
-        //simulation.rigid_body_set[*self.get_rigid_body_handle()].set_linvel(velocity, true);
-        simulation.rigid_body_set[*self.get_rigid_body_handle()].add_force(movement, true);
+        // FIXME: Frameskip could potentially mean missed jump inputs
+        if ctx.keyboard.is_key_just_pressed(VirtualKeyCode::Space) {
+            match self.jump {
+                None => {
+                    self.jump = Some(Jump::new(ctx.time.time_since_start().as_secs_f32()));
+                },
+                _ => {}
+            }
+        }
+
+        if let Some(jump) = &mut self.jump {
+            if jump.ended {
+                self.jump = None
+            }
+            else {
+                movement.y = jump.velocity(ctx.time.time_since_start().as_secs_f32());
+            }
+        }
+
+        simulation.rigid_body_set[*self.get_rigid_body_handle()].set_linvel(movement, true);
+        //simulation.rigid_body_set[*self.get_rigid_body_handle()].add_force(movement, true);
     }
 }
 
