@@ -88,6 +88,90 @@ impl<T: SimulatedVisible> Visible for T {
     }
 }
 
+const PLAYER_TERMINAL_FALL_VELOCITY: f32 = 20.0;
+
+struct Jump {
+    start_time: f32,
+    jump_released: bool,
+    ended: bool,
+}
+
+impl Jump {
+    fn new(start_time: f32) -> Self {
+        Jump{start_time, jump_released: false, ended: false}
+    }
+
+    fn rise(t: f32) -> f32 {
+        // Rise to the apex of the jump, slowing down by some amount before reaching the apex
+        // t is a normalized time from 0 to 1
+
+        const INITIAL_VELOCITY: f32 = 10.0;
+        const FINAL_VELOCITY: f32 = 7.5;
+        const DECELERATION_BEGINS: f32 = 0.75;
+
+        const TOTAL_DECELERATION: f32 = FINAL_VELOCITY - INITIAL_VELOCITY;
+        const TOTAL_DECELERATION_DURATION: f32 = 1.0 - DECELERATION_BEGINS;
+
+        // Currently the deceleration begins constant (0) then becomes linear
+        // Alternatively, rising velocity could be entirely constant
+        if t < DECELERATION_BEGINS {
+            INITIAL_VELOCITY
+        }
+        else {
+            let normalized_deceleration_time = (t - DECELERATION_BEGINS) / TOTAL_DECELERATION_DURATION;
+            let deceleration = TOTAL_DECELERATION * normalized_deceleration_time;
+            
+            INITIAL_VELOCITY - deceleration
+        }
+    }
+
+    fn fall(t: f32) -> f32 {
+        // Slow the descent for a short time at first (for anti-gravity apex) then quickly accelerate to fall speed
+        // t is a normalized time from 0 to 1
+
+        const INITIAL_VELOCITY: f32 = 0.0;
+        const FAST_FALL_START_TIME: f32 = 0.25;
+        const FAST_FALL_DURATION: f32 = 1.0 - FAST_FALL_START_TIME;
+
+        const FINAL_SLOW_VELOCITY: f32 = 2.0;
+        const FINAL_FAST_VELOCITY: f32 = PLAYER_TERMINAL_FALL_VELOCITY;
+
+        const SLOW_ACCELERATION: f32 = FINAL_SLOW_VELOCITY - INITIAL_VELOCITY;
+        const FAST_ACCELERATION: f32 = FINAL_FAST_VELOCITY - FINAL_SLOW_VELOCITY;
+
+        if t < FAST_FALL_START_TIME {
+            let normalized_acceleration_time = t / FAST_FALL_START_TIME;
+            let acceleration = SLOW_ACCELERATION * normalized_acceleration_time;
+
+            INITIAL_VELOCITY + acceleration
+        }
+        else {
+            let normalized_acceleration_time = (t - FAST_FALL_START_TIME) / FAST_FALL_DURATION;
+            let acceleration = FAST_ACCELERATION * normalized_acceleration_time;
+
+            FINAL_SLOW_VELOCITY + acceleration
+        }
+    }
+
+    fn velocity(&mut self, time: f32) -> f32 {
+        const TRANSITION_TIME: f32 = 0.5;
+        const END_TIME: f32 = 1.0;
+
+        let duration = self.start_time - time;
+
+        if duration < TRANSITION_TIME {
+            Jump::rise(duration / TRANSITION_TIME)
+        }
+        else if duration < END_TIME {
+            Jump::fall((END_TIME - duration) / (END_TIME - TRANSITION_TIME))
+        }
+        else {
+            self.ended = true;
+            Jump::fall(1.0)
+        }
+    }
+}
+
 struct Player {
     rigid_body_handle: RigidBodyHandle,
     collider_handle: ColliderHandle,
@@ -134,10 +218,11 @@ impl Player {
     }
 
     fn movement_update(&mut self, simulation: &mut Simulation, ctx: &Context) {
-        const MOVEMENT_SPEED: f32 = 100.0;
+        const MOVEMENT_FACTOR: f32 = 700.0;
 
-        let mut velocity = simulation.rigid_body_set[*self.get_rigid_body_handle()].linvel().clone();
-        velocity.x = 0.0;
+        //let mut velocity = simulation.rigid_body_set[*self.get_rigid_body_handle()].linvel().clone();
+        //velocity.x = 0.0;
+        let mut movement = vector![0.0, 0.0];
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::W) {
 
@@ -148,14 +233,17 @@ impl Player {
         }
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::A) {
-            velocity.x -= MOVEMENT_SPEED;
+            movement.x -= MOVEMENT_FACTOR;
+            //velocity.x -= MOVEMENT_FACTOR;
         }
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::D) {
-            velocity.x += MOVEMENT_SPEED;
+            movement.y += MOVEMENT_FACTOR;
+            //velocity.x += MOVEMENT_FACTOR;
         }
 
-        simulation.rigid_body_set[*self.get_rigid_body_handle()].set_linvel(velocity, true);
+        //simulation.rigid_body_set[*self.get_rigid_body_handle()].set_linvel(velocity, true);
+        simulation.rigid_body_set[*self.get_rigid_body_handle()].add_force(movement, true);
     }
 }
 
@@ -360,7 +448,7 @@ impl MainState {
 
         let ground = Platform::from_body_and_collider(&mut simulation, gfx,
             RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_translations().build(),
-            ColliderBuilder::cuboid(500.0, 5.0).build(),
+            ColliderBuilder::cuboid(500.0, 5.0).density(10.0).build(),
         Color::WHITE)?;
 
         Ok(MainState{
