@@ -17,8 +17,10 @@ struct Camera {
 
 impl Camera {
     fn render(&self, canvas: &mut Canvas, gfx: &GraphicsContext, visibles: Vec<&dyn Visible>) {
+        let height = gfx.drawable_size().1;
+
         for visible in visibles {
-            visible.draw(canvas, gfx, &Point2{x: self.position.x, y: self.position.y}, self.rotation);
+            visible.draw(canvas, gfx, &Point2{x: self.position.x, y: self.position.y}, self.rotation, height);
         }
     }
 
@@ -66,20 +68,20 @@ trait SimulatedVisible: Simulated {
 }
 
 trait Visible {
-    fn draw(&self, canvas: &mut Canvas, gfx: &GraphicsContext, position: &Point2<f32>, rotation: f32);
+    fn draw(&self, canvas: &mut Canvas, gfx: &GraphicsContext, position: &Point2<f32>, rotation: f32, window_height: f32);
 }
 
 impl<T: SimulatedVisible> Visible for T {
-    fn draw(&self, canvas: &mut Canvas, gfx: &GraphicsContext, position: &Point2<f32>, rotation: f32) {
+    fn draw(&self, canvas: &mut Canvas, gfx: &GraphicsContext, position: &Point2<f32>, rotation: f32, window_height: f32) {
             if let Some(image) = self.get_image() {
                 canvas.draw_textured_mesh(self.get_mesh(), image, DrawParam::new().dest(Point2{
                     x: self.get_position().x + position.x,
-                    y: self.get_position().y + position.y}))
+                    y: window_height - self.get_position().y + position.y}))
             }
             else {
                 canvas.draw(&self.get_mesh(), DrawParam::new().dest(Point2{
                     x: self.get_position().x + position.x,
-                    y: self.get_position().y + position.y}))
+                    y: window_height - self.get_position().y + position.y}))
             }
     }
 }
