@@ -6,7 +6,7 @@ use ggez::{Context, GameResult};
 use ggez::input::keyboard::KeyInput;
 use ggez::glam::*;
 use ggez::conf::{WindowMode, WindowSetup};
-use rapier2d::na::{OPoint, Translation, Vector2};
+use rapier2d::na::{OPoint, Translation, Vector2, ComplexField};
 use rapier2d::prelude::*;
 
 struct Camera {
@@ -88,86 +88,79 @@ impl<T: SimulatedVisible> Visible for T {
     }
 }
 
-const PLAYER_TERMINAL_FALL_VELOCITY: f32 = 20.0;
+fn remap<T>(old_value: T, old_min: T, old_max: T, new_min: T, new_max: T) -> T
+where T: std::ops::Add<Output = T> + std::ops::Sub<Output = T> + std::ops::Mul<Output = T> + std::ops::Div<Output = T> + std::marker::Copy {
+    let old_range = old_max - old_min;
+    let new_range = new_max - new_min;
+    let new_value = (((old_value - old_min) * new_range) / old_range) + new_min;
+
+    new_value
+}
 
 struct Jump {
-    start_time: f32,
-    jump_released: bool,
-    ended: bool,
+    start: Option<usize>,
+    end: Option<usize>,
 }
 
 impl Jump {
-    fn new(start_time: f32) -> Self {
-        Jump{start_time, jump_released: false, ended: false}
+    const TERMINAL_VELOCITY: f32 = -300.0;
+
+    fn new() -> Self {
+        Jump{start: None, end: None}
     }
 
-    fn rise(t: f32) -> f32 {
-        // Rise to the apex of the jump, slowing down by some amount before reaching the apex
-        // t is a normalized time from 0 to 1
-
-        const INITIAL_VELOCITY: f32 = 10.0;
-        const FINAL_VELOCITY: f32 = 7.5;
-        const DECELERATION_BEGINS: f32 = 0.75;
-
-        const TOTAL_DECELERATION: f32 = FINAL_VELOCITY - INITIAL_VELOCITY;
-        const TOTAL_DECELERATION_DURATION: f32 = 1.0 - DECELERATION_BEGINS;
-
-        // Currently the deceleration begins constant (0) then becomes linear
-        // Alternatively, rising velocity could be entirely constant
-        if t < DECELERATION_BEGINS {
-            INITIAL_VELOCITY
-        }
-        else {
-            let normalized_deceleration_time = (t - DECELERATION_BEGINS) / TOTAL_DECELERATION_DURATION;
-            let deceleration = TOTAL_DECELERATION * normalized_deceleration_time;
-            
-            INITIAL_VELOCITY - deceleration
-        }
+    fn start(&mut self, ctx: &Context) {
+        self.start = Some(ctx.time.ticks());
+        self.end = None;
     }
 
-    fn fall(t: f32) -> f32 {
-        // Slow the descent for a short time at first (for anti-gravity apex) then quickly accelerate to fall speed
-        // t is a normalized time from 0 to 1
-
-        const INITIAL_VELOCITY: f32 = 0.0;
-        const FAST_FALL_START_TIME: f32 = 0.25;
-        const FAST_FALL_DURATION: f32 = 1.0 - FAST_FALL_START_TIME;
-
-        const FINAL_SLOW_VELOCITY: f32 = 2.0;
-        const FINAL_FAST_VELOCITY: f32 = PLAYER_TERMINAL_FALL_VELOCITY;
-
-        const SLOW_ACCELERATION: f32 = FINAL_SLOW_VELOCITY - INITIAL_VELOCITY;
-        const FAST_ACCELERATION: f32 = FINAL_FAST_VELOCITY - FINAL_SLOW_VELOCITY;
-
-        if t < FAST_FALL_START_TIME {
-            let normalized_acceleration_time = t / FAST_FALL_START_TIME;
-            let acceleration = SLOW_ACCELERATION * normalized_acceleration_time;
-
-            INITIAL_VELOCITY + acceleration
-        }
-        else {
-            let normalized_acceleration_time = (t - FAST_FALL_START_TIME) / FAST_FALL_DURATION;
-            let acceleration = FAST_ACCELERATION * normalized_acceleration_time;
-
-            FINAL_SLOW_VELOCITY + acceleration
-        }
+    fn end(&mut self, ctx: &Context) {
+        self.end = Some(ctx.time.ticks());
     }
 
-    fn velocity(&mut self, time: f32) -> f32 {
-        const TRANSITION_TIME: f32 = 0.5;
-        const END_TIME: f32 = 1.0;
+    fn active(&self) -> bool {
+        self.start.is_some() && self.end.is_none()
+    }
 
-        let duration = self.start_time - time;
+    fn velocity(&mut self, ctx: &Context) -> f32 {
+        if let Some(start) = self.start {
+            const FULL_UPWARD_TIME: usize = 30;
+            const APEX_TIME: usize = 50;
+            const APEX_RELEASE_TIME: usize = 55;
+            const TERMINAL_VELOCITY_TIME: usize = 100;
 
-        if duration < TRANSITION_TIME {
-            Jump::rise(duration / TRANSITION_TIME)
-        }
-        else if duration < END_TIME {
-            Jump::fall((END_TIME - duration) / (END_TIME - TRANSITION_TIME))
+            const EARLY_TIMESKIP: usize = 10;
+
+            const INITIAL_VELOCITY: f32 = 200.0;
+
+            let duration = if self.end.is_some() {
+                // Early release: skip a set amount of time
+                ctx.time.ticks() - start + FULL_UPWARD_TIME + EARLY_TIMESKIP
+            } else {
+                ctx.time.ticks() - start
+            };
+
+            if duration < APEX_TIME {
+                if duration < FULL_UPWARD_TIME {
+                    INITIAL_VELOCITY
+                }
+                else {
+                    remap::<f32>(duration as f32, FULL_UPWARD_TIME as f32, APEX_TIME as f32, INITIAL_VELOCITY, 0.0)
+                }
+            }
+            else if duration < APEX_RELEASE_TIME {
+                0.0
+            }
+            else if duration < TERMINAL_VELOCITY_TIME {
+                remap::<f32>(duration as f32, APEX_RELEASE_TIME as f32, TERMINAL_VELOCITY_TIME as f32, 0.0, Jump::TERMINAL_VELOCITY)
+            }
+            else {
+                self.end = Some(ctx.time.ticks());
+                Jump::TERMINAL_VELOCITY
+            }
         }
         else {
-            self.ended = true;
-            Jump::fall(1.0)
+            Jump::TERMINAL_VELOCITY
         }
     }
 }
@@ -178,7 +171,7 @@ struct Player {
     mesh: Mesh,
     position: Point2<f32>,
     rotation: f32,
-    jump: Option<Jump>,
+    jump: Jump,
 }
 
 impl Player {
@@ -215,12 +208,12 @@ impl Player {
             mesh,
             position: Point2{x: translation.x, y: translation.y},
             rotation: 0.0,
-            jump: None,
+            jump: Jump::new(),
         })
     }
 
     fn movement_update(&mut self, simulation: &mut Simulation, ctx: &Context) {
-        const MOVEMENT_FACTOR: f32 = 700.0;
+        const MOVEMENT_FACTOR: f32 = 100.0;
 
         let mut movement = simulation.rigid_body_set[*self.get_rigid_body_handle()].linvel().clone();
         movement.x = 0.0;
@@ -236,35 +229,26 @@ impl Player {
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::A) {
             movement.x -= MOVEMENT_FACTOR;
-            //velocity.x -= MOVEMENT_FACTOR;
         }
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::D) {
-            movement.y += MOVEMENT_FACTOR;
-            //velocity.x += MOVEMENT_FACTOR;
+            movement.x += MOVEMENT_FACTOR;
+
         }
 
         // FIXME: Frameskip could potentially mean missed jump inputs
-        if ctx.keyboard.is_key_just_pressed(VirtualKeyCode::Space) {
-            match self.jump {
-                None => {
-                    self.jump = Some(Jump::new(ctx.time.time_since_start().as_secs_f32()));
-                },
-                _ => {}
-            }
+        // TODO: Check if we're on the ground before starting a new jump
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Space) && !self.jump.active() {
+            self.jump.start(ctx);
         }
 
-        if let Some(jump) = &mut self.jump {
-            if jump.ended {
-                self.jump = None
-            }
-            else {
-                movement.y = jump.velocity(ctx.time.time_since_start().as_secs_f32());
-            }
+        if !ctx.keyboard.is_key_pressed(VirtualKeyCode::Space) && self.jump.active() {
+            self.jump.end(ctx);
         }
+
+        movement.y = self.jump.velocity(ctx);
 
         simulation.rigid_body_set[*self.get_rigid_body_handle()].set_linvel(movement, true);
-        //simulation.rigid_body_set[*self.get_rigid_body_handle()].add_force(movement, true);
     }
 }
 
@@ -468,7 +452,7 @@ impl MainState {
         let player = Player::new(&mut simulation, gfx, vector![200.0, 1000.0])?;
 
         let ground = Platform::from_body_and_collider(&mut simulation, gfx,
-            RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_translations().build(),
+            RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_translations().lock_rotations().build(),
             ColliderBuilder::cuboid(500.0, 5.0).density(10.0).build(),
         Color::WHITE)?;
 
@@ -483,11 +467,14 @@ impl MainState {
 
 impl event::EventHandler<ggez::GameError> for MainState {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
-        self.player.movement_update(&mut self.simulation, ctx);
-        self.simulation.update();
-        self.player.update(&mut self.simulation);
-        self.ground.update(&mut self.simulation);
-        self.camera.update(ctx);
+        while ctx.time.check_update_time(60) {
+            self.player.movement_update(&mut self.simulation, ctx);
+            self.simulation.update();
+            self.player.update(&mut self.simulation);
+            self.ground.update(&mut self.simulation);
+            self.camera.update(ctx);
+        }
+
         Ok(())
     }
 
