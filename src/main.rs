@@ -1,3 +1,5 @@
+use std::sync::atomic::AtomicUsize;
+
 use ggez::winit::event::VirtualKeyCode;
 use ggez::{event, mint};
 use ggez::graphics::{self, Color, DrawParam, Canvas, Drawable, Rect, GraphicsContext, Mesh, Transform, Image};
@@ -103,6 +105,8 @@ struct Jump {
 }
 
 impl Jump {
+    const BUFFERING: f32 = 0.1;
+
     fn new() -> Self {
         Jump{start: None, end: None}
     }
@@ -151,7 +155,7 @@ impl Jump {
         };
 
         if let Some(e) = self.end {
-            // If we released early, take .3 seconds to transition to terminal velocity and skip the apex
+            // If we released early, transition to terminal velocity and skip the apex
             let t = ctx.time.time_since_start().as_secs_f32() - e;
 
             remap(t, 0.0, 0.3, last_velocity, TERMINAL_VELOCITY)
@@ -169,6 +173,26 @@ impl Jump {
     }
 }
 
+static player_grounded: AtomicUsize = AtomicUsize::new(0);
+
+struct GamePhysicsHooks {
+    player_collider_handle: Option<ColliderHandle>,
+}
+
+impl PhysicsHooks for GamePhysicsHooks {
+    fn modify_solver_contacts(self: &GamePhysicsHooks, context: &mut ContactModificationContext) {
+        if let Some(handle) = self.player_collider_handle {
+            if context.collider1 == handle && context.normal.x.abs() < 0.75 {
+                player_grounded.store(1, core::sync::atomic::Ordering::Relaxed)
+            }
+        }
+
+        for solver_contact in &mut *context.solver_contacts {
+            solver_contact.friction = 0.0;
+        }
+    }
+}
+
 struct Player {
     rigid_body_handle: RigidBodyHandle,
     collider_handle: ColliderHandle,
@@ -176,6 +200,8 @@ struct Player {
     position: Point2<f32>,
     rotation: f32,
     jump: Jump,
+    last_buffered_jump_time: Option<f32>,
+    jump_was_pressed: bool,
 }
 
 impl Player {
@@ -186,7 +212,9 @@ impl Player {
             .can_sleep(false);
         let rigid_body_handle = simulation.rigid_body_set.insert(rigid_body);
 
-        let collider = ColliderBuilder::cuboid(20.0, 30.0).build();
+        let collider = ColliderBuilder::cuboid(20.0, 30.0)
+            .active_hooks(ActiveHooks::MODIFY_SOLVER_CONTACTS)
+            .build();
         let collider_handle = simulation.collider_set.insert_with_parent(
             collider.clone(),
             rigid_body_handle,
@@ -213,11 +241,13 @@ impl Player {
             position: Point2{x: translation.x, y: translation.y},
             rotation: 0.0,
             jump: Jump::new(),
+            last_buffered_jump_time: None,
+            jump_was_pressed: false,
         })
     }
 
     fn movement_update(&mut self, simulation: &mut Simulation, ctx: &Context) {
-        const MOVEMENT_FACTOR: f32 = 150.0;
+        const MOVEMENT_FACTOR: f32 = 2.5;
 
         let mut velocity = simulation.rigid_body_set[*self.get_rigid_body_handle()].linvel().clone();
 
@@ -230,35 +260,53 @@ impl Player {
         }
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::A) {
-            velocity.x = -MOVEMENT_FACTOR;
+            velocity.x -= MOVEMENT_FACTOR;
         }
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::D) {
-            velocity.x = MOVEMENT_FACTOR;
+            velocity.x += MOVEMENT_FACTOR;
         }
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::Space) {
+            if !self.jump_was_pressed {
+                self.last_buffered_jump_time = Some(ctx.time.time_since_start().as_secs_f32());
+            }
+
+            self.jump_was_pressed = true;
+        }
+        else {
+            self.jump_was_pressed = false;
+
             if self.jump.active() {
-                
+                self.jump.end(ctx);
+            }
+        }
+
+        let attempting_jump = if let Some(time) = self.last_buffered_jump_time {
+            if ctx.time.time_since_start().as_secs_f32() - time < Jump::BUFFERING {
+                true
             }
             else {
-                self.jump.start(ctx);
+                false
             }
         }
         else {
-            if self.jump.active() {
-                self.jump.end(ctx);
+            false
+        };
+
+        let grounded = player_grounded.load(core::sync::atomic::Ordering::Relaxed);
+        let v = self.jump.velocity(ctx);
+
+        if grounded == 1 {
+            if attempting_jump && !self.jump.active() {
+                self.jump.start(ctx);
+                self.last_buffered_jump_time = None;
             }
         }
 
-        // Simulate touching the ground
-        if ctx.keyboard.is_key_pressed(VirtualKeyCode::R) {
-            if self.jump.active() {
-                self.jump.end(ctx);
-            }
+        if grounded == 0 || self.jump.active() {
+            velocity.y = v;
         }
-
-        velocity.y = self.jump.velocity(ctx);
 
         simulation.rigid_body_set[*self.get_rigid_body_handle()].set_linvel(velocity, true);
     }
@@ -405,7 +453,7 @@ struct Simulation {
     impulse_joint_set: ImpulseJointSet,
     multibody_joint_set: MultibodyJointSet,
     ccd_solver: CCDSolver,
-    physics_hooks: (),
+    physics_hooks: GamePhysicsHooks,
     event_handler: ()
 }
 
@@ -422,7 +470,7 @@ impl Simulation {
         let mut impulse_joint_set = ImpulseJointSet::new();
         let mut multibody_joint_set = MultibodyJointSet::new();
         let mut ccd_solver = CCDSolver::new();
-        let physics_hooks = ();
+        let physics_hooks = GamePhysicsHooks{player_collider_handle: None};
         let event_handler = ();
 
         Simulation{
@@ -435,6 +483,8 @@ impl Simulation {
     }
 
     fn update(&mut self) {
+        player_grounded.store(0, core::sync::atomic::Ordering::Relaxed);
+
         self.physics_pipeline.step(
             &self.gravity,
             &self.integration_parameters,
@@ -461,10 +511,12 @@ struct MainState {
 
 impl MainState {
     fn new(mut simulation: Simulation, gfx: &GraphicsContext) -> GameResult<MainState> {
-        let player = Player::new(&mut simulation, gfx, vector![200.0, 1000.0])?;
+        let player = Player::new(&mut simulation, gfx, vector![0.0, 500.0])?;
+
+        simulation.physics_hooks.player_collider_handle = Some(player.collider_handle);
 
         let ground = Platform::from_body_and_collider(&mut simulation, gfx,
-            RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_translations().lock_rotations().build(),
+            RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_translations().build(),
             ColliderBuilder::cuboid(500.0, 5.0).density(10.0).build(),
         Color::WHITE)?;
 
