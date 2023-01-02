@@ -98,36 +98,73 @@ where T: std::ops::Add<Output = T> + std::ops::Sub<Output = T> + std::ops::Mul<O
 }
 
 struct Jump {
-    start: Option<usize>,
-    end: Option<usize>,
+    start: Option<f32>,
+    end: Option<f32>,
 }
 
 impl Jump {
-    const STRENGTH: f32 = 950000.0;
-
     fn new() -> Self {
         Jump{start: None, end: None}
     }
 
     fn start(&mut self, ctx: &Context) {
-        self.start = Some(ctx.time.ticks());
+        self.start = Some(ctx.time.time_since_start().as_secs_f32());
         self.end = None;
     }
 
     fn end(&mut self, ctx: &Context) {
-        self.end = Some(ctx.time.ticks());
+        self.end = Some(ctx.time.time_since_start().as_secs_f32());
     }
 
     fn active(&self) -> bool {
         self.start.is_some() && self.end.is_none()
     }
 
-    fn duration(&self, ctx: &Context) -> usize {
-        if let Some(start) = self.start {
-            ctx.time.ticks() - start
+    fn velocity(&self, ctx: &Context) -> f32 {
+        const LAUNCH_VELOCITY: f32 = 250.0;
+        const TERMINAL_VELOCITY: f32 = -300.0;
+
+        const BEGIN_GRAVITY: f32 = 0.3;
+        const REACH_APEX: f32 = 0.6;
+        const RELEASE_APEX: f32 = 0.61;
+        const REACH_TERMINAL_VELOCITY: f32 = 0.85;
+
+        let last_velocity = if let Some(t) = self.duration(ctx) {
+            if t < BEGIN_GRAVITY {
+                LAUNCH_VELOCITY
+            }
+            else if t < REACH_APEX {
+                remap(t, BEGIN_GRAVITY, REACH_APEX, LAUNCH_VELOCITY, 0.0)
+            }
+            else if t < RELEASE_APEX {
+                0.0
+            }
+            else if t < REACH_TERMINAL_VELOCITY {
+                remap(t, RELEASE_APEX, REACH_TERMINAL_VELOCITY, 0.0, TERMINAL_VELOCITY)
+            }
+            else {
+                TERMINAL_VELOCITY
+            }
         }
         else {
-            0
+            TERMINAL_VELOCITY
+        };
+
+        if let Some(e) = self.end {
+            // If we released early, take .3 seconds to transition to terminal velocity and skip the apex
+            let t = ctx.time.time_since_start().as_secs_f32() - e;
+
+            remap(t, 0.0, 0.3, last_velocity, TERMINAL_VELOCITY)
+        }
+        else {
+            last_velocity
+        }
+    }
+
+    fn duration(&self, ctx: &Context) -> Option<f32> {
+        match self.start {
+            Some(start) => Some(ctx.time.time_since_start().as_secs_f32() - start),
+            None => None,
         }
     }
 }
@@ -180,9 +217,9 @@ impl Player {
     }
 
     fn movement_update(&mut self, simulation: &mut Simulation, ctx: &Context) {
-        const MOVEMENT_FACTOR: f32 = 15000.0;
+        const MOVEMENT_FACTOR: f32 = 150.0;
 
-        let velocity = simulation.rigid_body_set[*self.get_rigid_body_handle()].linvel().clone();
+        let mut velocity = simulation.rigid_body_set[*self.get_rigid_body_handle()].linvel().clone();
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::W) {
 
@@ -193,41 +230,37 @@ impl Player {
         }
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::A) {
-            simulation.rigid_body_set[*self.get_rigid_body_handle()].apply_impulse(vector![-MOVEMENT_FACTOR, 0.0], true);
+            velocity.x = -MOVEMENT_FACTOR;
         }
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::D) {
-            simulation.rigid_body_set[*self.get_rigid_body_handle()].apply_impulse(vector![MOVEMENT_FACTOR, 0.0], true);
+            velocity.x = MOVEMENT_FACTOR;
         }
 
-        // Simulate touching the ground
-        if ctx.keyboard.is_key_just_pressed(VirtualKeyCode::R) {
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Space) {
             if self.jump.active() {
-                self.jump.end(ctx);
-                simulation.rigid_body_set[*self.get_rigid_body_handle()].set_gravity_scale(1.0, true);
-            }
-        }
-
-        // FIXME: Frameskip could potentially mean missed jump inputs
-        // TODO: Check if we're on the ground before starting a new jump
-        if self.jump.active() {
-            if ctx.keyboard.is_key_pressed(VirtualKeyCode::Space) && velocity.y > 0.0 {
-                simulation.rigid_body_set[*self.get_rigid_body_handle()].set_gravity_scale(0.4, true);
-                //simulation.rigid_body_set[*self.get_rigid_body_handle()].apply_impulse(vector![0.0, self.jump.upward_force(ctx)], true);
+                
             }
             else {
-                simulation.rigid_body_set[*self.get_rigid_body_handle()].set_gravity_scale(1.0, true);
+                self.jump.start(ctx);
             }
         }
         else {
-            if ctx.keyboard.is_key_pressed(VirtualKeyCode::Space) {
-                self.jump.start(ctx);
-                simulation.rigid_body_set[*self.get_rigid_body_handle()].apply_impulse(vector![0.0, Jump::STRENGTH], true);
-            }
-            else {
-                
+            if self.jump.active() {
+                self.jump.end(ctx);
             }
         }
+
+        // Simulate touching the ground
+        if ctx.keyboard.is_key_pressed(VirtualKeyCode::R) {
+            if self.jump.active() {
+                self.jump.end(ctx);
+            }
+        }
+
+        velocity.y = self.jump.velocity(ctx);
+
+        simulation.rigid_body_set[*self.get_rigid_body_handle()].set_linvel(velocity, true);
     }
 }
 
@@ -431,7 +464,7 @@ impl MainState {
         let player = Player::new(&mut simulation, gfx, vector![200.0, 1000.0])?;
 
         let ground = Platform::from_body_and_collider(&mut simulation, gfx,
-            RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_translations().build(),
+            RigidBodyBuilder::new(RigidBodyType::Dynamic).lock_translations().lock_rotations().build(),
             ColliderBuilder::cuboid(500.0, 5.0).density(10.0).build(),
         Color::WHITE)?;
 
@@ -446,7 +479,7 @@ impl MainState {
 
 impl event::EventHandler<ggez::GameError> for MainState {
     fn update(&mut self, ctx: &mut Context) -> GameResult {
-        while ctx.time.check_update_time(60) {
+        while ctx.time.check_update_time(120) {
             self.player.movement_update(&mut self.simulation, ctx);
             self.simulation.update();
             self.player.update(&mut self.simulation);
