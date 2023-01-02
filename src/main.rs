@@ -103,7 +103,7 @@ struct Jump {
 }
 
 impl Jump {
-    const TERMINAL_VELOCITY: f32 = -300.0;
+    const STRENGTH: f32 = 950000.0;
 
     fn new() -> Self {
         Jump{start: None, end: None}
@@ -122,56 +122,12 @@ impl Jump {
         self.start.is_some() && self.end.is_none()
     }
 
-    fn velocity(&mut self, ctx: &Context) -> f32 {
+    fn duration(&self, ctx: &Context) -> usize {
         if let Some(start) = self.start {
-            const TOTAL_TIME: f32 = 200.0;
-
-            // Normalized times
-            const FULL_UPWARD_PERCENT: f32 = 0.3;
-            const APEX_PERCENT: f32 = 0.5;
-            const APEX_RELEASE_PERCENT: f32 = 0.51;
-            const TERMINAL_VELOCITY_PERCENT: f32 = 1.0;
-
-            const EARLY_TIMESKIP_PERCENT: f32 = 0.15;
-
-            // Real times
-            const FULL_UPWARD_TIME: f32 = FULL_UPWARD_PERCENT * TOTAL_TIME;
-            const APEX_TIME: f32 = APEX_PERCENT * TOTAL_TIME;
-            const APEX_RELEASE_TIME: f32 = APEX_RELEASE_PERCENT * TOTAL_TIME;
-            const TERMINAL_VELOCITY_TIME: f32 = TERMINAL_VELOCITY_PERCENT * TOTAL_TIME;
-
-            const EARLY_TIMESKIP: f32 = EARLY_TIMESKIP_PERCENT * TOTAL_TIME;
-
-            const INITIAL_VELOCITY: f32 = 200.0;
-
-            let duration = if self.end.is_some() {
-                // Early release: skip a set amount of time
-                ctx.time.ticks() as f32 - (start as f32) + FULL_UPWARD_TIME + EARLY_TIMESKIP
-            } else {
-                ctx.time.ticks() as f32 - (start as f32)
-            } as f32;
-
-            if duration < APEX_TIME {
-                if duration < FULL_UPWARD_TIME {
-                    INITIAL_VELOCITY
-                }
-                else {
-                    remap::<f32>(duration, FULL_UPWARD_TIME, APEX_TIME, INITIAL_VELOCITY, 0.0)
-                }
-            }
-            else if duration < APEX_RELEASE_TIME {
-                0.0
-            }
-            else if duration < TERMINAL_VELOCITY_TIME {
-                remap::<f32>(duration, APEX_RELEASE_TIME, TERMINAL_VELOCITY_TIME, 0.0, Jump::TERMINAL_VELOCITY)
-            }
-            else {
-                self.end = Some(ctx.time.ticks());
-                Jump::TERMINAL_VELOCITY
-            }
+            ctx.time.ticks() - start
         }
         else {
-            Jump::TERMINAL_VELOCITY
+            0
         }
     }
 }
@@ -224,11 +180,9 @@ impl Player {
     }
 
     fn movement_update(&mut self, simulation: &mut Simulation, ctx: &Context) {
-        const MOVEMENT_FACTOR: f32 = 100.0;
+        const MOVEMENT_FACTOR: f32 = 15000.0;
 
-        let mut movement = simulation.rigid_body_set[*self.get_rigid_body_handle()].linvel().clone();
-        movement.x = 0.0;
-        //let mut movement = vector![0.0, 0.0];
+        let velocity = simulation.rigid_body_set[*self.get_rigid_body_handle()].linvel().clone();
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::W) {
 
@@ -239,27 +193,41 @@ impl Player {
         }
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::A) {
-            movement.x -= MOVEMENT_FACTOR;
+            simulation.rigid_body_set[*self.get_rigid_body_handle()].apply_impulse(vector![-MOVEMENT_FACTOR, 0.0], true);
         }
 
         if ctx.keyboard.is_key_pressed(VirtualKeyCode::D) {
-            movement.x += MOVEMENT_FACTOR;
+            simulation.rigid_body_set[*self.get_rigid_body_handle()].apply_impulse(vector![MOVEMENT_FACTOR, 0.0], true);
+        }
 
+        // Simulate touching the ground
+        if ctx.keyboard.is_key_just_pressed(VirtualKeyCode::R) {
+            if self.jump.active() {
+                self.jump.end(ctx);
+                simulation.rigid_body_set[*self.get_rigid_body_handle()].set_gravity_scale(1.0, true);
+            }
         }
 
         // FIXME: Frameskip could potentially mean missed jump inputs
         // TODO: Check if we're on the ground before starting a new jump
-        if ctx.keyboard.is_key_pressed(VirtualKeyCode::Space) && !self.jump.active() {
-            self.jump.start(ctx);
+        if self.jump.active() {
+            if ctx.keyboard.is_key_pressed(VirtualKeyCode::Space) && velocity.y > 0.0 {
+                simulation.rigid_body_set[*self.get_rigid_body_handle()].set_gravity_scale(0.4, true);
+                //simulation.rigid_body_set[*self.get_rigid_body_handle()].apply_impulse(vector![0.0, self.jump.upward_force(ctx)], true);
+            }
+            else {
+                simulation.rigid_body_set[*self.get_rigid_body_handle()].set_gravity_scale(1.0, true);
+            }
         }
-
-        if !ctx.keyboard.is_key_pressed(VirtualKeyCode::Space) && self.jump.active() {
-            self.jump.end(ctx);
+        else {
+            if ctx.keyboard.is_key_pressed(VirtualKeyCode::Space) {
+                self.jump.start(ctx);
+                simulation.rigid_body_set[*self.get_rigid_body_handle()].apply_impulse(vector![0.0, Jump::STRENGTH], true);
+            }
+            else {
+                
+            }
         }
-
-        movement.y = self.jump.velocity(ctx);
-
-        simulation.rigid_body_set[*self.get_rigid_body_handle()].set_linvel(movement, true);
     }
 }
 
@@ -412,7 +380,7 @@ impl Simulation {
     fn new() -> Self {
         let mut rigid_body_set = RigidBodySet::new();
         let mut collider_set = ColliderSet::new();
-        let gravity = vector![0.0, -75.0];
+        let gravity = vector![0.0, -1000.0];
         let integration_parameters = IntegrationParameters::default();
         let mut physics_pipeline = PhysicsPipeline::new();
         let mut island_manager = IslandManager::new();
